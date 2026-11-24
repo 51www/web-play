@@ -56,6 +56,15 @@ function guessMime(name: string): string | undefined {
   return ext ? map[ext] : undefined;
 }
 
+function pictureFilter(picture: AppSettings['picture']): string {
+  if (!picture.enhance) return 'none';
+  const parts: string[] = [];
+  if (Math.abs(picture.brightness - 1) > 0.001) parts.push(`brightness(${picture.brightness.toFixed(2)})`);
+  if (Math.abs(picture.contrast - 1) > 0.001) parts.push(`contrast(${picture.contrast.toFixed(2)})`);
+  if (Math.abs(picture.saturation - 1) > 0.001) parts.push(`saturate(${picture.saturation.toFixed(2)})`);
+  return parts.length ? parts.join(' ') : 'none';
+}
+
 function skipBounds(duration: number, settings: AppSettings) {
   const intro = Math.max(0, settings.skipIntro || 0);
   const outro = Math.max(0, settings.skipOutro || 0);
@@ -557,7 +566,9 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
     if (!ctx) return;
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.filter = pictureFilter(settingsRef.current.picture);
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.filter = 'none';
 
     if (settingsRef.current.screenshotWithDanmaku) {
       const snapshot = rendererRef.current?.getSnapshot();
@@ -633,7 +644,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
     >
       <div className={`stage-screen${src ? '' : ' is-empty'}`}>
         <div data-vjs-player className="video-host" ref={videoHostRef}>
-          <video ref={videoRef} className="video-js" playsInline />
+          <video ref={videoRef} className="video-js" playsInline style={{ filter: pictureFilter(settings.picture) }} />
         </div>
         <div
           ref={overlayRef}
@@ -755,6 +766,12 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
                 backgroundImage: `url(${thumbSprite.src})`,
                 backgroundPosition: `-${Math.min(thumbSprite.count - 1, Math.max(0, Math.floor(thumbHover.time / duration * thumbSprite.count))) * 160}px 0`,
               }}
+            />
+          )}
+          {thumbHover && duration > 0 && (
+            <div
+              className={`progress-time-tip${thumbSprite ? ' below' : ''}`}
+              style={{ left: thumbHover.x }}
             >
               <span className="mono">{formatTime(thumbHover.time)}</span>
             </div>

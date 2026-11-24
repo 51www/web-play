@@ -1,5 +1,5 @@
 import { PLAYBACK_RATES } from '../types';
-import type { AppSettings, DanmakuSettings } from '../types';
+import type { AppSettings, DanmakuSettings, PictureSettings } from '../types';
 import { Icon } from './Icon';
 
 interface SettingsPanelProps {
@@ -47,6 +47,28 @@ export function SettingsPanel({ open, settings, onChange, onDanmakuChange, onRes
             </label>
           </div>
           <p className="hint">设为 0 表示不跳过。播放时会自动略过片头与片尾对应时长；单集循环时片尾会回到片头之后。</p>
+        </div>
+
+        <div className="field-block">
+          <label>画质</label>
+          <div className="switch-grid">
+            <label className="switch-row wide"><span>画质增强（补偿浏览器偏灰的色彩还原）</span><input type="checkbox" checked={settings.picture.enhance} onChange={(event) => onChange({ picture: { ...settings.picture, enhance: event.target.checked } })} /></label>
+          </div>
+          <div className="field-row playback-field-row picture-field-row">
+            <label>亮度
+              <input type="range" min={0.8} max={1.4} step={0.02} value={settings.picture.brightness} disabled={!settings.picture.enhance} onChange={(event) => onChange({ picture: { ...settings.picture, brightness: Number(event.target.value) } })} />
+              <span className="mono">{settings.picture.brightness.toFixed(2)}</span>
+            </label>
+            <label>对比度
+              <input type="range" min={0.8} max={1.4} step={0.02} value={settings.picture.contrast} disabled={!settings.picture.enhance} onChange={(event) => onChange({ picture: { ...settings.picture, contrast: Number(event.target.value) } })} />
+              <span className="mono">{settings.picture.contrast.toFixed(2)}</span>
+            </label>
+            <label>饱和度
+              <input type="range" min={0.8} max={1.6} step={0.02} value={settings.picture.saturation} disabled={!settings.picture.enhance} onChange={(event) => onChange({ picture: { ...settings.picture, saturation: Number(event.target.value) } })} />
+              <span className="mono">{settings.picture.saturation.toFixed(2)}</span>
+            </label>
+          </div>
+          <p className="hint">Web 播放时浏览器对色彩空间（BT.601/709、limited range）的处理常比本地播放器偏灰。开启后会轻度提升对比与饱和度，可按片源微调。</p>
         </div>
 
         <div className="field-block">

@@ -51,6 +51,7 @@ function hydrate(saved: PersistedState | null): PersistedState {
       ...base,
       danmaku: { ...DEFAULT_SETTINGS.danmaku, ...(base.danmaku ?? {}) },
       subtitle: { ...DEFAULT_SETTINGS.subtitle, ...(base.subtitle ?? {}) },
+      picture: { ...DEFAULT_SETTINGS.picture, ...(base.picture ?? {}) },
     },
   };
 }

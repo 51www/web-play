@@ -30,9 +30,17 @@ export interface SubtitleTrack {
   delay: number;
 }
 
+export interface PictureSettings {
+  enhance: boolean;
+  brightness: number;
+  contrast: number;
+  saturation: number;
+}
+
 export interface AppSettings {
   danmaku: DanmakuSettings;
   subtitle: SubtitleSettings;
+  picture: PictureSettings;
   autoNext: boolean;
   loop: boolean;
   shuffle: boolean;
@@ -105,4 +113,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   skipIntro: 0,
   skipOutro: 0,
   screenshotWithDanmaku: false,
+  picture: {
+    enhance: true,
+    brightness: 1,
+    contrast: 1.08,
+    saturation: 1.12,
+  },
 };
