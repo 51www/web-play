@@ -1,4 +1,5 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import videojs from 'video.js';
 import { PLAYBACK_RATES } from '../types';
 import type { AppSettings, PlaylistItem } from '../types';
@@ -77,6 +78,20 @@ function nextPlaybackRate(current: number): number {
   return rates.find((rate) => rate > current + 0.001) ?? rates[0] ?? 1;
 }
 
+const HEATMAP_BUCKETS = 200;
+
+function heatOpacity(ratio: number): number {
+  return ratio <= 0 ? 0 : 0.3 + ratio * 0.7;
+}
+
+function formatClock(time: number): string {
+  const total = Math.max(0, Math.floor(time || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
 export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
   item,
   src,
@@ -117,8 +132,11 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
   const thumbSpriteRef = useRef<{ src: string; count: number; itemId: string } | null>(null);
   const thumbVideoRef = useRef<HTMLVideoElement | null>(null);
   const thumbTokenRef = useRef(0);
+  const heatmapRef = useRef<HTMLDivElement | null>(null);
 
   const [currentTime, setCurrentTime] = useState(0);
+  const [stageSize, setStageSize] = useState<{ width: number; height: number } | null>(null);
+  const [portalEl, setPortalEl] = useState<HTMLElement | null>(null);
   const [duration, setDuration] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(settings.playbackRate);
   const [dragging, setDragging] = useState(false);
@@ -352,10 +370,10 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
     const progressEl = player.el().querySelector<HTMLElement>('.vjs-progress-control');
     const onProgressMove = (event: MouseEvent) => {
       const rect = progressEl?.getBoundingClientRect();
-      const stageRect = stageRef.current?.getBoundingClientRect();
-      if (!rect || !stageRect) return;
+      const playerRect = player.el().getBoundingClientRect();
+      if (!rect || !playerRect.width) return;
       const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-      const x = Math.max(90, Math.min(stageRect.width - 90, event.clientX - stageRect.left));
+      const x = Math.max(90, Math.min(playerRect.width - 90, event.clientX - playerRect.left));
       setThumbHover({ time: ratio * durationRef.current, x });
     };
     const onProgressLeave = () => setThumbHover(null);
@@ -399,7 +417,14 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
     progressEl?.addEventListener('mousemove', onProgressMove);
     progressEl?.addEventListener('mouseleave', onProgressLeave);
 
+    const heatEl = document.createElement('div');
+    heatEl.className = 'danmaku-heatmap';
+    progressEl?.appendChild(heatEl);
+    heatmapRef.current = heatEl;
+    setPortalEl(player.el() as HTMLElement);
+
     return () => {
+      setPortalEl(null);
       player.off('loadedmetadata', onLoadedMetadata);
       player.off('timeupdate', onTimeUpdate);
       player.off('seeked', onSeeked);
@@ -413,6 +438,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
       progressEl?.removeEventListener('mouseleave', onProgressLeave);
       if (videoWithFrames.cancelVideoFrameCallback && frameCallback) videoWithFrames.cancelVideoFrameCallback(frameCallback);
       thumbTokenRef.current += 1;
+      heatmapRef.current = null;
       thumbVideoRef.current?.removeAttribute('src');
       thumbVideoRef.current?.load();
       thumbVideoRef.current = null;
@@ -426,6 +452,69 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
       playerRef.current = null;
     };
   }, [generateThumbnails]);
+
+  const updateHeatmap = useCallback((items: DanmakuItem[], total: number) => {
+    const container = heatmapRef.current;
+    if (!container) return;
+    const buckets = new Array<number>(HEATMAP_BUCKETS).fill(0);
+    const usable = Number.isFinite(total) && total > 0;
+    if (usable) {
+      for (const entry of items) {
+        const time = entry.time;
+        if (!Number.isFinite(time)) continue;
+        const bounded = Math.min(Math.max(time, 0), total);
+        buckets[Math.min(HEATMAP_BUCKETS - 1, Math.floor(bounded / total * HEATMAP_BUCKETS))] += 1;
+      }
+    }
+    const max = Math.max(1, ...buckets);
+    const columns: HTMLElement[] = [];
+    for (let index = 0; index < HEATMAP_BUCKETS; index += 1) {
+      const cell = document.createElement('i');
+      const ratio = buckets[index] / max;
+      // 高度增益：中低密度也拉到足够高，密度差异更醒目
+      const boosted = Math.min(1, ratio * 1.6);
+      cell.style.height = `${Math.round(boosted * 100)}%`;
+      cell.style.opacity = String(heatOpacity(boosted));
+      columns.push(cell);
+    }
+    container.replaceChildren(...columns);
+    container.classList.toggle('has-data', usable && items.length > 0);
+  }, []);
+
+  useEffect(() => {
+    updateHeatmap(danmakuItems, duration);
+  }, [danmakuItems, duration, updateHeatmap]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !videoSize.width || !videoSize.height) {
+      setStageSize(null);
+      return;
+    }
+    const area = stage.parentElement;
+    if (!area) return;
+    const compute = () => {
+      if (document.fullscreenElement && document.fullscreenElement.contains(stage)) return;
+      const availW = Math.min(area.clientWidth, 980);
+      const availH = area.clientHeight;
+      if (availW < 80 || availH < 120) return;
+      const innerW = availW - 24;
+      const innerH = availH - 24;
+      const aspect = videoSize.height / videoSize.width;
+      const heightByWidth = innerW * aspect + 100;
+      if (heightByWidth <= innerH) {
+        setStageSize({ width: availW, height: Math.round(heightByWidth + 24) });
+      } else {
+        const videoH = Math.max(120, innerH - 100);
+        const videoW = videoH / aspect;
+        setStageSize({ width: Math.round(Math.min(availW, videoW + 24)), height: Math.round(availH) });
+      }
+    };
+    compute();
+    const observer = new ResizeObserver(compute);
+    observer.observe(area);
+    return () => observer.disconnect();
+  }, [videoSize.width, videoSize.height]);
 
   useEffect(() => {
     itemsRef.current = danmakuItems;
@@ -620,7 +709,6 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
     changeVolume,
   }), [seek, seekBy, togglePlay, toggleMute, toggleFullscreen, togglePip, capture, changeRate, changeVolume]);
 
-  const progress = duration > 0 ? currentTime / duration : 0;
   const activeVideo = playerRef.current?.el().querySelector('video') ?? videoRef.current;
   const infoWidth = videoSize.width || activeVideo?.videoWidth || 0;
   const infoHeight = videoSize.height || activeVideo?.videoHeight || 0;
@@ -629,6 +717,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
     <section
       ref={stageRef}
       className={`stage${dragging ? ' is-dragging' : ''}`}
+      style={stageSize ? { '--stage-w': `${stageSize.width}px`, '--stage-h': `${stageSize.height}px` } as CSSProperties : undefined}
       onDragOver={(event) => {
         event.preventDefault();
         setDragging(true);
@@ -657,7 +746,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
               fontSize: `${settings.subtitle.fontSize}px`,
               color: settings.subtitle.color,
               background: settings.subtitle.background,
-              bottom: `calc(3.8em + ${settings.subtitle.bottom}px)`,
+              bottom: `calc(100px + ${settings.subtitle.bottom}px)`,
             }}
           >
             {activeCue}
@@ -683,15 +772,6 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
 
       {src && (
         <>
-          <div className="timecode-rail" aria-hidden="true">
-            <span className="mono">{formatTime(currentTime)}</span>
-            <div className="rail-ticks">
-              {Array.from({ length: 28 }).map((_, index) => (
-                <i key={index} className={index / 28 <= progress ? 'on' : ''} />
-              ))}
-            </div>
-            <span className="mono">{formatTime(duration)}</span>
-          </div>
           <div className="danmaku-float-group">
             <button
               className="danmaku-float rate-float"
@@ -758,7 +838,7 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
               </dl>
             </div>
           )}
-          {thumbSprite && thumbHover && duration > 0 && (
+          {thumbSprite && thumbHover && duration > 0 && portalEl && createPortal(
             <div
               className="thumbnail-preview"
               style={{
@@ -766,17 +846,26 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
                 backgroundImage: `url(${thumbSprite.src})`,
                 backgroundPosition: `-${Math.min(thumbSprite.count - 1, Math.max(0, Math.floor(thumbHover.time / duration * thumbSprite.count))) * 160}px 0`,
               }}
-            />
+            />,
+            portalEl
           )}
-          {thumbHover && duration > 0 && (
+          {thumbHover && duration > 0 && portalEl && createPortal(
             <div
               className={`progress-time-tip${thumbSprite ? ' below' : ''}`}
               style={{ left: thumbHover.x }}
             >
               <span className="mono">{formatTime(thumbHover.time)}</span>
-            </div>
+            </div>,
+            portalEl
           )}
         </>
+      )}
+      {src && portalEl && createPortal(
+        <div className="progress-clock" aria-hidden="true">
+          <span className="mono">{formatClock(currentTime)}</span>
+          <span className="mono">{formatClock(duration)}</span>
+        </div>,
+        portalEl
       )}
     </section>
   );

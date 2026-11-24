@@ -386,9 +386,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // 空格键统一只控制播放/暂停：在捕获阶段拦截，
+    // 避免焦点停留在控制栏按钮（如全屏键）上时被空格误触发
+    const onKeyDownSpace = (event: KeyboardEvent) => {
+      if (event.key !== ' ' || event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)) return;
+      if (panel) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (target?.tagName === 'BUTTON') target.blur();
+      playerRef.current?.togglePlay();
+    };
+    window.addEventListener('keydown', onKeyDownSpace, true);
+
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target && (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName) || target.isContentEditable)) return;
+      if (target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)) return;
       if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
       const key = event.key.toLowerCase();
 
@@ -403,6 +417,7 @@ export default function App() {
         return;
       }
       if (panel) return;
+      if (target && target.tagName === 'BUTTON') return;
 
       if (key === 'n' || key === 'b') {
         event.preventDefault();
@@ -413,7 +428,6 @@ export default function App() {
       if (!player) return;
 
       switch (key) {
-        case ' ':
         case 'k':
           player.togglePlay();
           break;
@@ -465,7 +479,10 @@ export default function App() {
       event.preventDefault();
     };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDownSpace, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, [panel, playAt, state.settings.danmaku.enabled, toggleSubtitle, updateDanmakuSettings]);
 
   const loadEpisode = useCallback(async (anime: Anime, episode: Episode, matchKeyword: string) => {
