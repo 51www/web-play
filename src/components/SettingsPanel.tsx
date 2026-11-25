@@ -7,12 +7,12 @@ interface SettingsPanelProps {
   settings: AppSettings;
   onChange: (patch: Partial<AppSettings>) => void;
   onDanmakuChange: (patch: Partial<DanmakuSettings>) => void;
-  onReset: () => void;
   onClearCache: () => void;
+  onReset: () => void;
   onClose: () => void;
 }
 
-export function SettingsPanel({ open, settings, onChange, onDanmakuChange, onReset, onClearCache, onClose }: SettingsPanelProps) {
+export function SettingsPanel({ open, settings, onChange, onDanmakuChange, onClearCache, onReset, onClose }: SettingsPanelProps) {
   return (
     <div className={`drawer-backdrop${open ? ' open' : ''}`} onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
@@ -91,7 +91,20 @@ export function SettingsPanel({ open, settings, onChange, onDanmakuChange, onRes
               <input type="number" step={0.1} value={settings.subtitle.delay} onChange={(event) => onChange({ subtitle: { ...settings.subtitle, delay: Number(event.target.value) || 0 } })} />
             </label>
           </div>
-          <p className="hint">字幕可通过播放器右上角「挂载字幕」按钮添加，支持 SRT/VTT；同名字幕会在导入视频时自动挂载。</p>
+          <p className="hint">支持 SRT/VTT 字幕；同名字幕会在导入视频时自动挂载。</p>
+        </div>
+
+        <div className="field-block">
+          <label>屏蔽词（逗号或换行分隔）</label>
+          <textarea rows={2} value={settings.danmaku.blockWords} placeholder="例如：剧透, 广告" onChange={(event) => onDanmakuChange({ blockWords: event.target.value })} />
+        </div>
+
+        <div className="field-block">
+          <label>弹幕显示区域（占画面比例）</label>
+          <div className="field-row">
+            <label>上边距 <input type="number" min={0} max={45} value={settings.danmaku.topMargin} onChange={(event) => onDanmakuChange({ topMargin: Number(event.target.value) || 0 })} />%</label>
+            <label>下边距 <input type="number" min={0} max={45} value={settings.danmaku.bottomMargin} onChange={(event) => onDanmakuChange({ bottomMargin: Number(event.target.value) || 0 })} />%</label>
+          </div>
         </div>
 
         <div className="field-block">
@@ -104,14 +117,6 @@ export function SettingsPanel({ open, settings, onChange, onDanmakuChange, onRes
             <input type="number" min={0} step={60000} value={settings.danmaku.cacheTTL} onChange={(event) => onDanmakuChange({ cacheTTL: Number(event.target.value) || 0 })} />
           </label>
           <button className="button quiet" onClick={onClearCache}><Icon name="refresh" size={16} /> 清空弹幕缓存</button>
-        </div>
-
-        <div className="field-block">
-          <label>弹幕显示区域（占画面比例）</label>
-          <div className="field-row">
-            <label>上边距 <input type="number" min={0} max={45} value={settings.danmaku.topMargin} onChange={(event) => onDanmakuChange({ topMargin: Number(event.target.value) || 0 })} />%</label>
-            <label>下边距 <input type="number" min={0} max={45} value={settings.danmaku.bottomMargin} onChange={(event) => onDanmakuChange({ bottomMargin: Number(event.target.value) || 0 })} />%</label>
-          </div>
         </div>
 
         <div className="drawer-actions">

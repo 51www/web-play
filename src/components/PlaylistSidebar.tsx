@@ -22,7 +22,6 @@ interface PlaylistSidebarProps {
   onReorder: (from: number, to: number) => void;
   onImport: (files: File[]) => void;
   onToggleFavorite: (id: string) => void;
-  onSetTags: (id: string, value: string) => void;
 }
 
 export function PlaylistSidebar({
@@ -41,7 +40,6 @@ export function PlaylistSidebar({
   onReorder,
   onImport,
   onToggleFavorite,
-  onSetTags,
 }: PlaylistSidebarProps) {
   const [creating, setCreating] = useState(false);
   const [draftName, setDraftName] = useState('');
@@ -190,10 +188,6 @@ export function PlaylistSidebar({
                 onClick={() => onToggleFavorite(item.id)}
                 title={item.favorite ? '取消收藏' : '收藏'}
               ><Icon name="star" size={14} /></button>
-              <button className="icon-button tiny" onClick={() => {
-                const value = window.prompt('设置标签（逗号分隔）', (item.tags ?? []).join(', '));
-                if (value !== null) onSetTags(item.id, value);
-              }} title="设置标签"><Icon name="tag" size={14} /></button>
               <button className="icon-button tiny" onClick={() => onReorder(index, index - 1)} disabled={index === 0} title="上移"><Icon name="up" size={14} /></button>
               <button className="icon-button tiny" onClick={() => onReorder(index, index + 1)} disabled={index === activePlaylist.items.length - 1} title="下移"><Icon name="down" size={14} /></button>
               <button className="icon-button tiny danger" onClick={() => {

@@ -18,7 +18,7 @@ import type { Anime, DanmakuItem, Episode } from './features/danmaku/types';
 import { deleteVideo, getVideo, loadState, putVideo, saveState } from './storage/db';
 import { DEFAULT_SETTINGS } from './types';
 import type { AppSettings, DanmakuSettings, PersistedState, Playlist, PlaylistItem } from './types';
-import { cleanFileName, detectEpisode, fileBaseName, formatBytes, normalizeTags, uid } from './utils';
+import { cleanFileName, detectEpisode, fileBaseName, formatBytes, uid } from './utils';
 
 interface Toast {
   id: string;
@@ -342,26 +342,6 @@ export default function App() {
     }));
   }, []);
 
-  const importSubtitleFile = useCallback(async (file: File) => {
-    if (!activeItem) {
-      notify('请先选择视频再挂载字幕', 'error');
-      return;
-    }
-    if (!/\.(srt|vtt)$/i.test(file.name)) {
-      notify('仅支持 SRT 或 VTT 字幕', 'error');
-      return;
-    }
-    try {
-      const content = await file.text();
-      updateItem(activeItem.id, {
-        subtitle: { name: file.name, content, enabled: true, delay: activeItem.subtitle?.delay ?? 0 },
-      });
-      notify(`已挂载字幕：${file.name}`, 'success');
-    } catch {
-      notify('字幕读取失败', 'error');
-    }
-  }, [activeItem, notify, updateItem]);
-
   const toggleSubtitle = useCallback(() => {
     if (!activeItem?.subtitle) {
       notify('当前视频没有挂载字幕', 'info');
@@ -376,10 +356,6 @@ export default function App() {
     const target = state.playlists.flatMap((playlist) => playlist.items).find((item) => item.id === id);
     if (target) updateItem(id, { favorite: !target.favorite });
   }, [state.playlists, updateItem]);
-
-  const setItemTags = useCallback((id: string, value: string) => {
-    updateItem(id, { tags: normalizeTags(value) });
-  }, [updateItem]);
 
   const seekDanmaku = useCallback((time: number) => {
     playerRef.current?.seek(time);
@@ -613,8 +589,8 @@ export default function App() {
           </div>
         </div>
         <div className="top-actions">
-          <label className="button primary">
-            <Icon name="upload" size={17} /> 打开视频
+          <label className="icon-button" title="打开视频">
+            <Icon name="upload" />
             <input type="file" accept="video/*,.srt,.vtt" multiple hidden onChange={(event) => {
               if (event.target.files?.length) void importFiles(Array.from(event.target.files));
               event.target.value = '';
@@ -627,7 +603,6 @@ export default function App() {
               event.target.value = '';
             }} />
           </label>
-          <button className="button quiet" onClick={() => setPanel('danmaku')}><Icon name="search" size={17} /> 弹幕</button>
           <button className="icon-button" onClick={() => setPanel('help')} title="操作指南"><Icon name="keyboard" /></button>
           <button className="icon-button" onClick={() => setPanel('settings')} title="设置"><Icon name="settings" /></button>
           <button className="icon-button only-mobile" onClick={() => setSidebarOpen(true)} title="片单"><Icon name="list" /></button>
@@ -651,7 +626,6 @@ export default function App() {
           onReorder={reorder}
           onImport={(files) => void importFiles(files)}
           onToggleFavorite={toggleFavorite}
-          onSetTags={setItemTags}
         />
 
         <div className="main-column">
@@ -681,7 +655,6 @@ export default function App() {
               onOpenDanmaku={() => setPanel('danmaku')}
               onToggleDanmaku={() => updateDanmakuSettings({ enabled: !state.settings.danmaku.enabled })}
               onRateChange={(rate) => updateSettings({ playbackRate: rate })}
-              onSubtitleFile={(file) => void importSubtitleFile(file)}
               onToggleSubtitle={toggleSubtitle}
               onNotify={notify}
               onError={(message) => notify(message, 'error')}
@@ -720,7 +693,6 @@ export default function App() {
           setDanmakuStatus('弹幕已清空');
         }}
         onSettingsChange={updateDanmakuSettings}
-        onOpenSettings={() => setPanel('settings')}
         onClose={() => setPanel(null)}
       />
 
@@ -729,13 +701,13 @@ export default function App() {
         settings={state.settings}
         onChange={updateSettings}
         onDanmakuChange={updateDanmakuSettings}
-        onReset={() => {
-          setState((prev) => ({ ...prev, settings: DEFAULT_SETTINGS }));
-          notify('已恢复默认设置', 'success');
-        }}
         onClearCache={() => {
           clearDanmakuCache();
           notify('弹幕缓存已清空', 'success');
+        }}
+        onReset={() => {
+          setState((prev) => ({ ...prev, settings: DEFAULT_SETTINGS }));
+          notify('已恢复默认设置', 'success');
         }}
         onClose={() => setPanel(null)}
       />

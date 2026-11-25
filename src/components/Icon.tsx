@@ -10,7 +10,8 @@ export type IconName =
   | 'trash' | 'edit' | 'grip' | 'close' | 'check' | 'alert' | 'up' | 'down'
   | 'film' | 'refresh' | 'import' | 'speed'
   | 'cc' | 'ccOff' | 'camera' | 'pip' | 'info' | 'keyboard'
-  | 'star' | 'tag' | 'folder' | 'sort' | 'history';
+  | 'star' | 'tag' | 'folder' | 'sort' | 'history'
+  | 'danmakuOn' | 'danmakuOff' | 'danmakuSet';
 
 const paths: Record<IconName, JSX.Element> = {
   play: <path d="M8 5.5v13l10-6.5z" fill="currentColor" stroke="none" />,
@@ -49,6 +50,38 @@ const paths: Record<IconName, JSX.Element> = {
   folder: <><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></>,
   sort: <><path d="M8 6h13M8 12h10M8 18h7" /><path d="m3 8 2-2 2 2M5 6v12" /></>,
   history: <><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /><path d="M12 7v5l4 2" /></>,
+  danmakuOn: (
+    <>
+      <path d="m8 4 4 3.5 4-3.5" />
+      <rect x="3" y="7" width="18" height="11" rx="2" />
+      <path d="M7 10.5h5" /><path d="M7 13.5h3" />
+      <circle cx="17.9" cy="16.9" r="4.1" style={{ fill: 'var(--teal)' }} stroke="none" />
+      <path d="m16.2 17 1.2 1.2 2.2-2.4" stroke="#f6f2e8" strokeWidth="1.4" />
+    </>
+  ),
+  danmakuOff: (
+    <>
+      <path d="m8 4 4 3.5 4-3.5" />
+      <rect x="3" y="7" width="18" height="11" rx="2" />
+      <path d="M7 10.5h5" /><path d="M7 13.5h3" />
+      <circle cx="17.9" cy="16.9" r="4.1" style={{ fill: '#352d28' }} stroke="none" />
+      <path d="m16.7 15.9 2.2 2.2" stroke="#f2e8d8" strokeWidth="1.3" />
+      <path d="m18.9 15.9-2.2 2.2" stroke="#f2e8d8" strokeWidth="1.3" />
+    </>
+  ),
+  danmakuSet: (
+    <>
+      <path d="m8 4 4 3.5 4-3.5" />
+      <rect x="3" y="7" width="18" height="11" rx="2" />
+      <path d="M7 10.5h5" /><path d="M7 13.5h3" />
+      <circle cx="17.9" cy="16.9" r="4.1" style={{ fill: '#352d28' }} stroke="none" />
+      <circle cx="17.9" cy="16.9" r="1.2" stroke="#f2e8d8" strokeWidth="1.1" />
+      <path d="M17.9 14.9v-.9" stroke="#f2e8d8" strokeWidth="1.1" />
+      <path d="M17.9 18.9v.9" stroke="#f2e8d8" strokeWidth="1.1" />
+      <path d="M14.9 16.9h-.9" stroke="#f2e8d8" strokeWidth="1.1" />
+      <path d="M20.9 16.9h.9" stroke="#f2e8d8" strokeWidth="1.1" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 20, className }: IconProps) {

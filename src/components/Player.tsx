@@ -7,11 +7,19 @@ import type { DanmakuItem } from '../features/danmaku/types';
 import { DanmakuRenderer } from '../features/danmaku/renderer';
 import { parseSubtitle } from '../features/subtitle/parser';
 import type { SubtitleCue } from '../features/subtitle/parser';
-import { formatBytes, formatTime } from '../utils';
+import { formatTime } from '../utils';
 import { Icon } from './Icon';
 
 type VideoPlayer = ReturnType<typeof videojs>;
 type NotifyType = 'info' | 'success' | 'error';
+
+// 时间统一显示为 HH:mm:ss（覆盖 video.js 默认的 M:SS / H:MM:SS 自适应格式）
+function formatHms(seconds: number): string {
+  const total = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${pad(Math.floor(total / 3600))}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`;
+}
+videojs.time.setFormatTime((seconds: number) => formatHms(seconds));
 
 export interface PlayerHandle {
   seek: (time: number) => void;
@@ -38,7 +46,6 @@ interface PlayerProps {
   onOpenDanmaku: () => void;
   onToggleDanmaku: () => void;
   onRateChange: (rate: number) => void;
-  onSubtitleFile: (file: File) => void;
   onToggleSubtitle: () => void;
   onNotify: (message: string, type?: NotifyType) => void;
   onError: (message: string) => void;
@@ -73,24 +80,12 @@ function skipBounds(duration: number, settings: AppSettings) {
   return { intro, outro };
 }
 
-function nextPlaybackRate(current: number): number {
-  const rates = PLAYBACK_RATES as readonly number[];
-  return rates.find((rate) => rate > current + 0.001) ?? rates[0] ?? 1;
-}
-
 const HEATMAP_BUCKETS = 200;
 
 function heatOpacity(ratio: number): number {
   return ratio <= 0 ? 0 : 0.3 + ratio * 0.7;
 }
 
-function formatClock(time: number): string {
-  const total = Math.max(0, Math.floor(time || 0));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = total % 60;
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
 
 export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
   item,
@@ -105,7 +100,6 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
   onOpenDanmaku,
   onToggleDanmaku,
   onRateChange,
-  onSubtitleFile,
   onToggleSubtitle,
   onNotify,
   onError,
@@ -134,18 +128,15 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
   const thumbTokenRef = useRef(0);
   const heatmapRef = useRef<HTMLDivElement | null>(null);
 
-  const [currentTime, setCurrentTime] = useState(0);
   const [stageSize, setStageSize] = useState<{ width: number; height: number } | null>(null);
   const [portalEl, setPortalEl] = useState<HTMLElement | null>(null);
+  const [controlBarEl, setControlBarEl] = useState<HTMLElement | null>(null);
   const [duration, setDuration] = useState(0);
-  const [playbackRate, setPlaybackRate] = useState(settings.playbackRate);
   const [dragging, setDragging] = useState(false);
   const [activeCue, setActiveCue] = useState('');
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
-  const [estimatedFps, setEstimatedFps] = useState(0);
   const [thumbSprite, setThumbSprite] = useState<{ src: string; count: number } | null>(null);
   const [thumbHover, setThumbHover] = useState<{ time: number; x: number } | null>(null);
-  const [infoOpen, setInfoOpen] = useState(false);
   const [pipActive, setPipActive] = useState(false);
 
   itemRef.current = item;
@@ -239,10 +230,11 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
           'timeDivider',
           'durationDisplay',
           'progressControl',
-          'volumePanel',
           'playbackRateMenuButton',
+          'volumePanel',
           'fullscreenToggle',
         ],
+        volumePanel: { inline: false },
       },
       userActions: { hotkeys: false },
     });
@@ -304,7 +296,6 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
       if (!skipState.introDone && bounds.intro > 0 && time < bounds.intro) {
         skipState.introDone = true;
         player.currentTime(bounds.intro);
-        setCurrentTime(bounds.intro);
         return;
       }
       if (!skipState.outroDone && bounds.outro > 0 && time >= total - bounds.outro) {
@@ -313,17 +304,14 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
           player.currentTime(bounds.intro);
           skipState.introDone = true;
           skipState.outroDone = false;
-          setCurrentTime(bounds.intro);
           return;
         }
         player.pause();
-        setCurrentTime(0);
         callbacksRef.current.onTime(0);
         callbacksRef.current.onEnded();
         return;
       }
 
-      setCurrentTime(time);
       const subtitle = itemRef.current?.subtitle;
       const cueTime = time + (subtitle?.delay ?? 0) + settingsRef.current.subtitle.delay;
       const cue = subtitle?.enabled && settingsRef.current.subtitle.enabled
@@ -352,7 +340,6 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
       if (sourceLoadingRef.current) return;
       const rate = player.playbackRate() || 1;
       playbackRateRef.current = rate;
-      setPlaybackRate(rate);
       callbacksRef.current.onRateChange(rate);
     };
 
@@ -382,22 +369,13 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
       requestVideoFrameCallback?: (callback: (now: number) => void) => number;
       cancelVideoFrameCallback?: (handle: number) => void;
     };
-    const frameTimes: number[] = [];
     let frameCallback = 0;
-    let frameCount = 0;
-    const onFrame = (now: number) => {
+    const onFrame = () => {
       if (video.videoWidth && (
         video.videoWidth !== videoSizeRef.current.width || video.videoHeight !== videoSizeRef.current.height
       )) {
         videoSizeRef.current = { width: video.videoWidth, height: video.videoHeight };
         setVideoSize(videoSizeRef.current);
-      }
-      frameTimes.push(now);
-      if (frameTimes.length > 30) frameTimes.shift();
-      frameCount += 1;
-      if (frameCount % 10 === 0 && frameTimes.length > 1) {
-        const span = frameTimes[frameTimes.length - 1] - frameTimes[0];
-        if (span > 0) setEstimatedFps(Math.round((frameTimes.length - 1) * 1000 / span));
       }
       if (videoWithFrames.requestVideoFrameCallback) {
         frameCallback = videoWithFrames.requestVideoFrameCallback(onFrame);
@@ -422,9 +400,11 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
     progressEl?.appendChild(heatEl);
     heatmapRef.current = heatEl;
     setPortalEl(player.el() as HTMLElement);
+    setControlBarEl(player.el().querySelector<HTMLElement>('.vjs-control-bar') ?? null);
 
     return () => {
       setPortalEl(null);
+      setControlBarEl(null);
       player.off('loadedmetadata', onLoadedMetadata);
       player.off('timeupdate', onTimeUpdate);
       player.off('seeked', onSeeked);
@@ -528,13 +508,8 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
   }, [item?.subtitle?.content, item?.subtitle?.enabled]);
 
   useEffect(() => {
-    setInfoOpen(false);
-  }, [item?.id]);
-
-  useEffect(() => {
     settingsRef.current = settings;
     playbackRateRef.current = settings.playbackRate;
-    setPlaybackRate(settings.playbackRate);
     const player = playerRef.current;
     if (player) {
       player.playbackRate(settings.playbackRate);
@@ -552,7 +527,6 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
       player.pause();
       player.reset();
       sourceLoadingRef.current = false;
-      setCurrentTime(0);
       setDuration(0);
       return;
     }
@@ -693,10 +667,6 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
     }, 'image/png');
   }, []);
 
-  const handleCycleRate = () => {
-    changeRate(1);
-  };
-
   useImperativeHandle(handleRef, () => ({
     seek,
     seekBy,
@@ -708,10 +678,6 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
     changeRate,
     changeVolume,
   }), [seek, seekBy, togglePlay, toggleMute, toggleFullscreen, togglePip, capture, changeRate, changeVolume]);
-
-  const activeVideo = playerRef.current?.el().querySelector('video') ?? videoRef.current;
-  const infoWidth = videoSize.width || activeVideo?.videoWidth || 0;
-  const infoHeight = videoSize.height || activeVideo?.videoHeight || 0;
 
   return (
     <section
@@ -772,71 +738,37 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
 
       {src && (
         <>
-          <div className="danmaku-float-group">
-            <button
-              className="danmaku-float rate-float"
-              onClick={handleCycleRate}
-              title={`切换倍速，当前 ${playbackRate}×`}
-              aria-label={`切换倍速，当前 ${playbackRate} 倍`}
-            >
-              <Icon name="speed" size={15} /> <span className="mono">{playbackRate}×</span>
-            </button>
-            <button
-              className="danmaku-float icon-only"
-              onClick={onToggleSubtitle}
-              title={item?.subtitle?.enabled ? '关闭字幕' : '开启字幕'}
-              aria-label={item?.subtitle?.enabled ? '关闭字幕' : '开启字幕'}
-            >
-              <Icon name={item?.subtitle?.enabled ? 'cc' : 'ccOff'} size={15} />
-            </button>
-            <label className="danmaku-float icon-only" title="挂载 SRT / VTT 字幕" aria-label="挂载字幕">
-              <Icon name="import" size={15} />
-              <input type="file" accept=".srt,.vtt" hidden onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) onSubtitleFile(file);
-                event.target.value = '';
-              }} />
-            </label>
-            <button className="danmaku-float icon-only" onClick={capture} title="截图（S）" aria-label="截图">
-              <Icon name="camera" size={15} />
-            </button>
-            <button
-              className={`danmaku-float icon-only${pipActive ? ' active' : ''}`}
-              onClick={() => void togglePip()}
-              title="画中画（P）"
-              aria-label="画中画"
-            >
-              <Icon name="pip" size={15} />
-            </button>
-            <button
-              className={`danmaku-float icon-only${infoOpen ? ' active' : ''}`}
-              onClick={() => setInfoOpen((value) => !value)}
-              title="视频信息"
-              aria-label="视频信息"
-            >
-              <Icon name="info" size={15} />
-            </button>
-            <button className="danmaku-float" onClick={onOpenDanmaku} title={danmakuStatus}>
-              <Icon name="search" size={15} /> <span className="float-label">弹幕</span> <span className="mono">{danmakuItems.length}</span>
-            </button>
-            <button className="danmaku-float icon-only" onClick={onToggleDanmaku} title={settings.danmaku.enabled ? '关闭弹幕' : '开启弹幕'} aria-label="切换弹幕">
-              <Icon name={settings.danmaku.enabled ? 'check' : 'close'} size={15} />
-            </button>
-          </div>
-          {infoOpen && (
-            <div className="player-info-popover">
-              <div className="info-popover-head"><Icon name="info" size={16} /><strong>视频信息</strong></div>
-              <dl>
-                <div><dt>文件</dt><dd>{item?.fileName ?? '—'}</dd></div>
-                <div><dt>容器</dt><dd>{item?.fileName.split('.').pop()?.toUpperCase() ?? '—'}</dd></div>
-                <div><dt>分辨率</dt><dd className="mono">{infoWidth && infoHeight ? `${infoWidth}×${infoHeight}` : '—'}</dd></div>
-                <div><dt>时长</dt><dd className="mono">{formatTime(duration)}</dd></div>
-                <div><dt>大小</dt><dd className="mono">{item ? formatBytes(item.size) : '—'}</dd></div>
-                <div><dt>平均码率</dt><dd className="mono">{item && duration ? `${(item.size * 8 / duration / 1000).toFixed(0)} kbps` : '—'}</dd></div>
-                <div><dt>估算帧率</dt><dd className="mono">{estimatedFps ? `${estimatedFps} fps` : '—'}</dd></div>
-                <div><dt>当前倍速</dt><dd className="mono">{playbackRate}×</dd></div>
-              </dl>
-            </div>
+          {controlBarEl && createPortal(
+            <div className="danmaku-float-group">
+              <button
+                className="danmaku-float icon-only"
+                onClick={onToggleSubtitle}
+                title={item?.subtitle?.enabled ? '关闭字幕' : '开启字幕'}
+                aria-label={item?.subtitle?.enabled ? '关闭字幕' : '开启字幕'}
+              >
+                <Icon name={item?.subtitle?.enabled ? 'cc' : 'ccOff'} size={20} />
+              </button>
+              <button className="danmaku-float icon-only" onClick={capture} title="截图（S）" aria-label="截图">
+                <Icon name="camera" size={20} />
+              </button>
+              <button
+                className={`danmaku-float icon-only${pipActive ? ' active' : ''}`}
+                onClick={() => void togglePip()}
+                title="画中画（P）"
+                aria-label="画中画"
+              >
+                <Icon name="pip" size={20} />
+              </button>
+              <div className="danmaku-float-sub">
+                <button className="danmaku-float icon-only" onClick={onOpenDanmaku} title={danmakuStatus} aria-label="弹幕设置">
+                  <Icon name="danmakuSet" size={20} />
+                </button>
+                <button className="danmaku-float icon-only" onClick={onToggleDanmaku} title={settings.danmaku.enabled ? '关闭弹幕' : '开启弹幕'} aria-label="切换弹幕">
+                  <Icon name={settings.danmaku.enabled ? 'danmakuOn' : 'danmakuOff'} size={20} />
+                </button>
+              </div>
+            </div>,
+            controlBarEl
           )}
           {thumbSprite && thumbHover && duration > 0 && portalEl && createPortal(
             <div
@@ -859,13 +791,6 @@ export const Player = forwardRef<PlayerHandle, PlayerProps>(function Player({
             portalEl
           )}
         </>
-      )}
-      {src && portalEl && createPortal(
-        <div className="progress-clock" aria-hidden="true">
-          <span className="mono">{formatClock(currentTime)}</span>
-          <span className="mono">{formatClock(duration)}</span>
-        </div>,
-        portalEl
       )}
     </section>
   );
